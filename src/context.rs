@@ -1,38 +1,24 @@
-use std::cell::RefCell;
-use std::ops::Deref;
-
-pub struct Context<T> {
-    data: T,
-}
-
-impl<T> Deref for Context<T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        &self.data
-    }
-}
-
-impl<T> Context<T> {
-    fn new(data: T) -> Self {
-        Context { data }
-    }
-}
-
 macro_rules! context {
-    ($name:ident, $d:ty, $val:expr) => {
-        mod $name {
+    ($context_name:ident, $data_type:ty, $initial_value:expr) => {
+        mod $context_name {
             use super::*;
+            use std::cell::RefCell;
 
             thread_local! {
-                pub static T_LOCAL_CONTEXT: RefCell<$d> = RefCell::new($val);
+                pub(super) static T_LOCAL_CONTEXT: RefCell<$data_type> = RefCell::new($initial_value);
             }
 
-            pub fn get<'a>() -> $d {
+            /// Get a clone of the current context value.
+            pub(super) fn clone() -> $data_type {
                 T_LOCAL_CONTEXT.with(|ctx| ctx.borrow().clone())
             }
 
-            pub fn with<F: FnOnce() -> R, R>(data: $d, f: F) -> R {
+            /// Provide a context value to a function and any functions that it calls.
+            /// After the function returns, the context value is restored to its previous value.
+            pub(super) fn replace_within<ContextfulFn: FnOnce() -> Ret, Ret>(
+                data: $data_type,
+                f: ContextfulFn,
+            ) -> Ret {
                 T_LOCAL_CONTEXT.with(|ctx| {
                     let old_data = ctx.replace(data);
                     let ret = f();
@@ -47,32 +33,37 @@ macro_rules! context {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::rc::Rc;
 
-    context!(CTX, u8, 42);
+    context!(ctx, u8, 42);
 
     #[test]
-    fn test_context() {
-        assert_eq!(CTX::get(), 42_u8);
-
-        let inner = CTX::with(43_u8, || CTX::get());
-
-        assert_eq!(inner, 43_u8);
-        assert_eq!(CTX::get(), 42_u8);
+    fn test_number() {
+        assert_eq!(ctx::clone(), 42_u8);
+        assert_eq!(ctx::replace_within(43, || ctx::clone()), 43_u8);
+        assert_eq!(ctx::clone(), 42_u8);
     }
 
     #[derive(Debug, PartialEq, Clone)]
-    pub struct Foo {
-        x: u8,
-    }
-    context!(FOO, Foo, Foo { x: 42 });
+    struct Foo(u8);
+    context!(foo, Foo, Foo(42));
 
     #[test]
-    fn test_context_struct() {
-        assert_eq!(FOO::get().x, 42);
+    fn test_struct() {
+        assert_eq!(foo::clone().0, 42_u8);
+        assert_eq!(foo::replace_within(Foo(43), || foo::clone()).0, 43_u8);
+        assert_eq!(foo::clone().0, 42_u8);
+    }
 
-        let inner = FOO::with(Foo { x: 43 }, || FOO::get());
+    context!(foo_rc, Rc<Foo>, Rc::new(Foo(42)));
 
-        assert_eq!(inner.x, 43);
-        assert_eq!(FOO::get().x, 42);
+    #[test]
+    fn test_rc() {
+        assert_eq!(foo_rc::clone().0, 42_u8);
+        assert_eq!(
+            foo_rc::replace_within(Rc::new(Foo(43)), || foo_rc::clone()).0,
+            43_u8
+        );
+        assert_eq!(foo_rc::clone().0, 42_u8);
     }
 }
