@@ -1,6 +1,7 @@
-macro_rules! context {
-    ($context_name:ident, $data_type:ty, $initial_value:expr) => {
-        mod $context_name {
+macro_rules! context_inner {
+    ($visibility:vis $context_name:ident, $data_type:ty, $initial_value:expr) => {
+        $visibility mod $context_name {
+            #![allow(unused_imports)]
             use super::*;
             use std::cell::RefCell;
 
@@ -8,7 +9,7 @@ macro_rules! context {
                 pub(super) static T_LOCAL_CONTEXT: RefCell<$data_type> = RefCell::new($initial_value);
             }
 
-            /// Get a clone of the current context value.
+            /// Get a clone of the current context_inner value.
             pub(super) fn clone() -> $data_type {
                 T_LOCAL_CONTEXT.with(|ctx| ctx.borrow().clone())
             }
@@ -30,12 +31,22 @@ macro_rules! context {
     };
 }
 
+macro_rules! contextual {
+    {$($visibility:vis $context_name:ident : $data_type:ty = $initial_value:expr;)+} =>{
+        $(
+            context_inner!($visibility $context_name, $data_type, $initial_value);
+        )+
+    };
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
+    //use super::*;
     use std::rc::Rc;
 
-    context!(ctx, u8, 42);
+    contextual! {
+        ctx: u8 = 42;
+    }
 
     #[test]
     fn test_number() {
@@ -46,7 +57,9 @@ mod tests {
 
     #[derive(Debug, PartialEq, Clone)]
     struct Foo(u8);
-    context!(foo, Foo, Foo(42));
+    contextual! {
+        foo: Foo = Foo(42);
+    }
 
     #[test]
     fn test_struct() {
@@ -55,7 +68,9 @@ mod tests {
         assert_eq!(foo::clone().0, 42_u8);
     }
 
-    context!(foo_rc, Rc<Foo>, Rc::new(Foo(42)));
+    contextual! {
+        foo_rc: Rc<Foo> = Rc::new(Foo(42));
+    }
 
     #[test]
     fn test_rc() {
