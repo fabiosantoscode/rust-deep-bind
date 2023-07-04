@@ -1,26 +1,31 @@
-macro_rules! context_inner {
-    ($visibility:vis $context_name:ident, $data_type:ty, $initial_value:expr) => {
+macro_rules! contextual {
+    {$($visibility:vis $context_name:ident : $data_type:ty = $initial_value:expr;)+} =>{
+        $(
+            contextual!($visibility $context_name: $data_type = $initial_value);
+        )+
+    };
+    ($visibility:vis $context_name:ident : $data_type:ty = $initial_value:expr) => {
         $visibility mod $context_name {
             #![allow(unused_imports)]
             use super::*;
             use std::cell::RefCell;
 
             thread_local! {
-                pub(super) static T_LOCAL_CONTEXT: RefCell<$data_type> = RefCell::new($initial_value);
+                pub(super) static THREAD_LOCAL_CTX_HOLDER: RefCell<$data_type> = RefCell::new($initial_value);
             }
 
             /// Get a clone of the current context_inner value.
             pub(super) fn clone() -> $data_type {
-                T_LOCAL_CONTEXT.with(|ctx| ctx.borrow().clone())
+                THREAD_LOCAL_CTX_HOLDER.with(|ctx| ctx.borrow().clone())
             }
 
             /// Provide a context value to a function and any functions that it calls.
             /// After the function returns, the context value is restored to its previous value.
-            pub(super) fn replace_within<ContextfulFn: FnOnce() -> Ret, Ret>(
+            pub(super) fn replace_within<ContextZone: FnOnce() -> Ret, Ret>(
                 data: $data_type,
-                f: ContextfulFn,
+                f: ContextZone,
             ) -> Ret {
-                T_LOCAL_CONTEXT.with(|ctx| {
+                THREAD_LOCAL_CTX_HOLDER.with(|ctx| {
                     let old_data = ctx.replace(data);
                     let ret = f();
                     ctx.replace(old_data);
@@ -31,22 +36,12 @@ macro_rules! context_inner {
     };
 }
 
-macro_rules! contextual {
-    {$($visibility:vis $context_name:ident : $data_type:ty = $initial_value:expr;)+} =>{
-        $(
-            context_inner!($visibility $context_name, $data_type, $initial_value);
-        )+
-    };
-}
-
 #[cfg(test)]
 mod tests {
     //use super::*;
     use std::rc::Rc;
 
-    contextual! {
-        ctx: u8 = 42;
-    }
+    contextual!(ctx: u8 = 42);
 
     #[test]
     fn test_number() {
@@ -59,6 +54,7 @@ mod tests {
     struct Foo(u8);
     contextual! {
         foo: Foo = Foo(42);
+        foo_rc: Rc<Foo> = Rc::new(Foo(42));
     }
 
     #[test]
@@ -66,10 +62,6 @@ mod tests {
         assert_eq!(foo::clone().0, 42_u8);
         assert_eq!(foo::replace_within(Foo(43), || foo::clone()).0, 43_u8);
         assert_eq!(foo::clone().0, 42_u8);
-    }
-
-    contextual! {
-        foo_rc: Rc<Foo> = Rc::new(Foo(42));
     }
 
     #[test]
