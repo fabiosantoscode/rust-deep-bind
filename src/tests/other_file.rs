@@ -4,5 +4,5 @@ use crate::contextual;
 pub(super) struct MyStruct(pub(super) u8);
 
 contextual! {
-    pub(super) from_another_file: MyStruct = MyStruct(42);
+    pub(super) FromAnotherFile(OTHER): MyStruct = MyStruct(42);
 }
